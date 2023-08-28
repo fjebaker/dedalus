@@ -1,0 +1,10 @@
+.{
+    .name = "dedalus",
+    .version = "0.1.0",
+    .dependencies = .{
+        .zigwolfssl = .{
+            .url = "https://github.com/fjebaker/zig-wolfssl/archive/master.tar.gz",
+            .hash = "1220f925a658413c08c8546ff1cd49aa7c484bd791fa629498776c6bc0faa28b28a0",
+        },
+    },
+}

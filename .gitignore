@@ -1,0 +1,4 @@
+cert.pem
+key.rsa
+openssl.sh
+zig-*
