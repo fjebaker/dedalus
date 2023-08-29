@@ -20,13 +20,16 @@ fn startServer() !void {
     std.debug.print("Listening\n", .{});
 
     while (true) {
-        var req = server.accept() catch |err| {
-            std.debug.print("ERR: {!}", .{err});
+        var req = server.accept() catch {
             continue;
         };
         defer req.deinit();
-        std.debug.print("R: {s}\n", .{req.content});
-        try req.respond(.{ .content = "thanks from dedalus" });
+
+        if (std.mem.eql(u8, req.uri.path, "/")) {
+            try req.respond(.{ .content = "Hello" });
+        } else {
+            try req.respond(.{ .status = .NOT_FOUND });
+        }
     }
 }
 
