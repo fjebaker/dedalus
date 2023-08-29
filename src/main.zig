@@ -6,6 +6,7 @@ const log = std.log.scoped(.dedalus);
 
 pub const gemini = @import("gemini.zig");
 pub const zzl = @import("zigwolfssl");
+const utils = @import("utils.zig");
 
 /// Setup the underlying TLS library
 ///
@@ -40,8 +41,7 @@ pub const Request = struct {
         const size = try ssl.read(&buff);
 
         var raw_content = try alloc.dupe(u8, buff[0..size]);
-        errdefer alloc.free(raw_content);
-        const content = trimWhiteSpace(raw_content);
+        const content = utils.trimWhitespaces(raw_content);
 
         // parse URI
         var uri = std.Uri.parse(content) catch {
@@ -63,6 +63,8 @@ pub const Request = struct {
             return RequestError.MalformedUri;
         };
 
+        uri.path = utils.cleanPath(uri.path);
+
         return .{
             .mem = mem.*,
             .conn = conn.*,
@@ -77,11 +79,6 @@ pub const Request = struct {
         self.conn.stream.close();
         self.mem.deinit();
         self.* = undefined;
-    }
-
-    fn trimWhiteSpace(s: []const u8) []const u8 {
-        const out = std.mem.trim(u8, s, &[_]u8{ ' ', '\n', '\r', '\t' });
-        return out;
     }
 
     fn logResponse(self: *const Request, response: Response) void {
@@ -191,3 +188,7 @@ pub const Server = struct {
         return req;
     }
 };
+
+test "all" {
+    _ = @import("utils.zig");
+}
