@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const gemini = @import("gemini.zig");
 pub const zzl = @import("zigwolfssl");
 
 /// Setup the underlying TLS library
@@ -15,13 +16,75 @@ pub fn deinit() void {
 }
 
 pub const Request = struct {
-    ssl: zzl.Ssl,
+    pub const RequestError = error{MalformedUri};
+
+    mem: std.heap.ArenaAllocator,
     conn: std.net.StreamServer.Connection,
+    ssl: zzl.Ssl,
+
+    content: []u8,
+    uri: std.Uri,
+
+    pub fn init(
+        mem: *std.heap.ArenaAllocator,
+        conn: *std.net.StreamServer.Connection,
+        ssl: *zzl.Ssl,
+    ) !Request {
+        var alloc = mem.allocator();
+
+        var buff: [4096]u8 = undefined;
+        const size = try ssl.read(&buff);
+        std.debug.print("Read {d} bytes\n", .{size});
+
+        var content = try alloc.dupe(u8, buff[0..size]);
+        errdefer alloc.free(content);
+
+        // parse URI
+        var uri = std.Uri.parse(content) catch |err| {
+            std.debug.print("ERR: {!}\n", .{err});
+            try writeResponse(ssl.writer(), .{
+                .status = .BAD_REQUEST,
+                .content = "",
+                .meta = "Malformed URI",
+            });
+            return RequestError.MalformedUri;
+        };
+
+        return .{
+            .mem = mem.*,
+            .conn = conn.*,
+            .ssl = ssl.*,
+            .content = content,
+            .uri = uri,
+        };
+    }
 
     pub fn deinit(self: *Request) void {
         self.ssl.deinit();
         self.conn.stream.close();
+        self.mem.deinit();
         self.* = undefined;
+    }
+
+    fn writeResponse(writer: anytype, response: Response) !void {
+        try response.formatMeta(writer);
+        try writer.writeAll(response.content);
+    }
+
+    pub fn respond(self: *Request, response: Response) !void {
+        try writeResponse(self.ssl.writer(), response);
+    }
+};
+
+pub const Response = struct {
+    status: gemini.StatusCodes = .SUCCESS,
+    content: []const u8,
+    mime: []const u8 = "text/gemini; charset=utf8",
+    meta: ?[]const u8 = null,
+
+    pub fn formatMeta(self: *const Response, writer: anytype) !void {
+        const meta = if (self.meta) |m| m else self.mime;
+        try writer.print("{d:0>2} {s}\r\n", .{ @intFromEnum(self.status), meta });
     }
 };
 
@@ -82,9 +145,17 @@ pub const Server = struct {
         var conn = try self.server.accept();
         errdefer conn.stream.close();
 
+        std.debug.print("Accepted connection\n", .{});
+
         var ssl = zzl.Ssl.init(self.context, conn.stream);
         errdefer ssl.deinit();
 
-        return .{ .conn = conn, .ssl = ssl };
+        var mem = std.heap.ArenaAllocator.init(self.allocator);
+        errdefer mem.deinit();
+
+        // pass pointers on the stack
+        var req = try Request.init(&mem, &conn, &ssl);
+        std.debug.print("Processed request\n", .{});
+        return req;
     }
 };

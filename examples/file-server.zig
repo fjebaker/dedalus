@@ -19,16 +19,14 @@ fn startServer() !void {
     try server.start();
     std.debug.print("Listening\n", .{});
 
-    var buffer: [2048]u8 = undefined;
     while (true) {
-        var req = try server.accept();
+        var req = server.accept() catch |err| {
+            std.debug.print("ERR: {!}", .{err});
+            continue;
+        };
         defer req.deinit();
-
-        const size = try req.ssl.read(&buffer);
-        std.debug.print("R: {d} {s}\n", .{ size, buffer[0..size] });
-
-        const out = try req.ssl.write("Thanks you!\n");
-        std.debug.print("W: {d}\n", .{out});
+        std.debug.print("R: {s}\n", .{req.content});
+        try req.respond(.{ .content = "thanks from dedalus" });
     }
 }
 
