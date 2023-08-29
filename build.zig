@@ -1,18 +1,5 @@
 const std = @import("std");
 
-pub fn linkWolfSSL(
-    b: *std.Build,
-    s: *std.build.CompileStep,
-    wolfssl: anytype,
-) void {
-    _ = b;
-    s.addIncludePath(std.build.LazyPath.relative("../wolfssl/zig-out/include"));
-    s.addLibraryPath(std.build.LazyPath.relative("../wolfssl/zig-out/lib"));
-    s.linkSystemLibrary("wolfssl");
-    s.linkLibC();
-    _ = wolfssl;
-}
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -32,13 +19,13 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    // unit tests
     const main_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/main.zig" },
         .target = target,
         .optimize = optimize,
     });
     main_tests.addModule("zigwolfssl", zigwolfssl.module("zigwolfssl"));
-    // linkWolfSSL(b, main_tests, zigwolfssl);
     main_tests.linkLibrary(zigwolfssl.artifact("wolfssl"));
 
     const run_main_tests = b.addRunArtifact(main_tests);
@@ -46,6 +33,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&run_main_tests.step);
 
+    // example 1
     const file_server = buildExample(b, mod, zigwolfssl, .{
         .name = "file-server",
         .root_source_file = .{ .path = "examples/file-server.zig" },
@@ -68,7 +56,6 @@ pub fn buildExample(
     const exe = b.addExecutable(opts);
     exe.addModule("zigwolfssl", zigwolfssl.module("zigwolfssl"));
     exe.linkLibrary(zigwolfssl.artifact("wolfssl"));
-    // linkWolfSSL(b, exe, zigwolfssl);
     exe.addModule("dedalus", mod);
     return exe;
 }
