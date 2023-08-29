@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
         "zigwolfssl",
         .{ .optimize = optimize, .target = target, .@"wolfssl-debug" = true },
     );
+    b.installArtifact(zigwolfssl.artifact("wolfssl"));
 
     const mod = b.addModule("dedalus", .{
         .source_file = .{ .path = "src/main.zig" },
