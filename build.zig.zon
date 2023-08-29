@@ -4,7 +4,7 @@
     .dependencies = .{
         .zigwolfssl = .{
             .url = "https://github.com/fjebaker/zig-wolfssl/archive/master.tar.gz",
-            .hash = "1220f925a658413c08c8546ff1cd49aa7c484bd791fa629498776c6bc0faa28b28a0",
+            .hash = "12205da81240a356618d596c8e432feaa7241cd2fd6ed18b39c1d81bf7fb78512742",
         },
     },
 }

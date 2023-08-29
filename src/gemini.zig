@@ -10,12 +10,16 @@ pub const ListenerOptions = struct {
     certificate: [:0]const u8,
 };
 
+pub const ListenerError = error{NotListening};
+
 pub const Listener = struct {
     allocator: std.mem.Allocator,
     // options
     context: ssl.Context,
     server: std.net.StreamServer,
     address: std.net.Address,
+
+    listening: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, opts: ListenerOptions) !Listener {
         var context = try ssl.Context.init(.TLSv1_3_Server);
@@ -34,7 +38,7 @@ pub const Listener = struct {
     }
 
     pub fn deinit(self: *Listener) void {
-        self.stop();
+        if (self.listening) self.stop();
         self.server.deinit();
         self.context.deinit();
         self.* = undefined;
@@ -42,44 +46,51 @@ pub const Listener = struct {
 
     pub fn start(self: *Listener) !void {
         try self.server.listen(self.address);
+        self.listening = true;
+        std.debug.print("L: listening...\n", .{});
     }
 
     pub fn stop(self: *Listener) void {
+        std.debug.print("L: Closed\n", .{});
+        self.listening = false;
         self.server.close();
     }
 
     pub fn accept(self: *Listener) !Request {
-        const tcp_conn = try self.server.accept();
-        const conn = self.context.newSslConnection(tcp_conn.stream);
-        errdefer conn.close();
+        if (!self.listening) return ListenerError.NotListening;
 
         var mem = std.heap.ArenaAllocator.init(self.allocator);
         errdefer mem.deinit();
-        return Request.init(mem, conn);
+        var alloc = mem.allocator();
+
+        const tcp_conn = try self.server.accept();
+        var conn = self.context.newSslConnection(tcp_conn.stream);
+        errdefer conn.close();
+
+        std.debug.print("L: TLS connection accepted\n", .{});
+
+        var message = try conn.reader().readAllAlloc(alloc, 4096);
+        errdefer self.allocator.free(message);
+
+        _ = try conn.write("Thanks!");
+
+        std.debug.print("L: {d} read : {s}\n", .{ message.len, message });
+
+        return .{
+            .mem = mem,
+            .conn = conn,
+            .content = message,
+        };
     }
 };
 
 pub const Request = struct {
     mem: std.heap.ArenaAllocator,
     conn: ssl.SslConnection,
-
-    content: []u8 = "",
-
-    fn readRequest(self: *Request) !void {
-        var reader = self.conn.reader();
-        self.content = try reader.readAllAlloc(self.mem.allocator(), 4096);
-    }
-
-    pub fn init(mem: std.heap.ArenaAllocator, conn: ssl.SslConnection) !Request {
-        var self: Request = .{
-            .mem = mem,
-            .conn = conn,
-        };
-        self.readRequest();
-        return self;
-    }
+    content: []u8,
 
     pub fn deinit(self: *Request) void {
+        std.debug.print("R: destroyed\n", .{});
         self.conn.close();
         self.mem.deinit();
         self.* = undefined;

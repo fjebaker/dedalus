@@ -1,13 +1,25 @@
 const std = @import("std");
 
+pub fn linkWolfSSL(
+    b: *std.Build,
+    s: *std.build.CompileStep,
+    wolfssl: anytype,
+) void {
+    _ = b;
+    s.addIncludePath(std.build.LazyPath.relative("../wolfssl/zig-out/include"));
+    s.addLibraryPath(std.build.LazyPath.relative("../wolfssl/zig-out/lib"));
+    s.linkSystemLibrary("wolfssl");
+    s.linkLibC();
+    _ = wolfssl;
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-
     const optimize = b.standardOptimizeOption(.{});
 
     const zigwolfssl = b.dependency(
         "zigwolfssl",
-        .{ .optimize = optimize, .target = target },
+        .{ .optimize = optimize, .target = target, .@"wolfssl-debug" = true },
     );
 
     const mod = b.addModule("dedalus", .{
@@ -26,6 +38,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     main_tests.addModule("zigwolfssl", zigwolfssl.module("zigwolfssl"));
+    // linkWolfSSL(b, main_tests, zigwolfssl);
     main_tests.linkLibrary(zigwolfssl.artifact("wolfssl"));
 
     const run_main_tests = b.addRunArtifact(main_tests);
@@ -55,6 +68,7 @@ pub fn buildExample(
     const exe = b.addExecutable(opts);
     exe.addModule("zigwolfssl", zigwolfssl.module("zigwolfssl"));
     exe.linkLibrary(zigwolfssl.artifact("wolfssl"));
+    // linkWolfSSL(b, exe, zigwolfssl);
     exe.addModule("dedalus", mod);
     return exe;
 }
