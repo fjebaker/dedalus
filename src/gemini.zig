@@ -19,6 +19,16 @@ pub const StatusCodes = enum(u8) {
     CLIENT_CERTIFICATE_REQUIRED = 60,
     CERTIFICATE_NOT_AUTHORISED = 61,
     CERTIFICATE_NOT_VALID = 62,
+
+    pub fn toString(self: StatusCodes) []const u8 {
+        switch (self) {
+            else => |t| return @tagName(t),
+        }
+    }
+
+    pub fn toInt(self: StatusCodes) u8 {
+        return @intFromEnum(self);
+    }
 };
 
 pub const StatusClass = enum(u8) {

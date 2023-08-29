@@ -1,5 +1,9 @@
 const std = @import("std");
 
+pub const log_level: std.log.Level = .debug;
+
+const log = std.log.scoped(.dedalus);
+
 pub const gemini = @import("gemini.zig");
 pub const zzl = @import("zigwolfssl");
 
@@ -22,7 +26,7 @@ pub const Request = struct {
     conn: std.net.StreamServer.Connection,
     ssl: zzl.Ssl,
 
-    content: []u8,
+    content: []const u8,
     uri: std.Uri,
 
     pub fn init(
@@ -34,19 +38,28 @@ pub const Request = struct {
 
         var buff: [4096]u8 = undefined;
         const size = try ssl.read(&buff);
-        std.debug.print("Read {d} bytes\n", .{size});
 
-        var content = try alloc.dupe(u8, buff[0..size]);
-        errdefer alloc.free(content);
+        var raw_content = try alloc.dupe(u8, buff[0..size]);
+        errdefer alloc.free(raw_content);
+        const content = trimWhiteSpace(raw_content);
 
         // parse URI
-        var uri = std.Uri.parse(content) catch |err| {
-            std.debug.print("ERR: {!}\n", .{err});
-            try writeResponse(ssl.writer(), .{
+        var uri = std.Uri.parse(content) catch {
+            const response = .{
                 .status = .BAD_REQUEST,
-                .content = "",
                 .meta = "Malformed URI",
-            });
+            };
+            try writeResponse(ssl.writer(), response);
+
+            log.info(
+                "{any} : {d} ({s})",
+                .{
+                    conn.address,
+                    gemini.StatusCodes.BAD_REQUEST.toInt(),
+                    gemini.StatusCodes.BAD_REQUEST.toString(),
+                },
+            );
+
             return RequestError.MalformedUri;
         };
 
@@ -66,6 +79,22 @@ pub const Request = struct {
         self.* = undefined;
     }
 
+    fn trimWhiteSpace(s: []const u8) []const u8 {
+        const out = std.mem.trim(u8, s, &[_]u8{ ' ', '\n', '\r', '\t' });
+        return out;
+    }
+
+    fn logResponse(self: *const Request, response: Response) void {
+        const meta = response.meta orelse "";
+        log.info("{any} : '{s}' - {d} ({s}) : {s}", .{
+            self.conn.address,
+            self.uri.path,
+            response.status.toInt(),
+            response.status.toString(),
+            meta,
+        });
+    }
+
     fn writeResponse(writer: anytype, response: Response) !void {
         try response.formatMeta(writer);
         try writer.writeAll(response.content);
@@ -73,17 +102,23 @@ pub const Request = struct {
 
     pub fn respond(self: *Request, response: Response) !void {
         try writeResponse(self.ssl.writer(), response);
+        self.logResponse(response);
     }
 };
 
 pub const Response = struct {
     status: gemini.StatusCodes = .SUCCESS,
-    content: []const u8,
+    content: []const u8 = "",
     mime: []const u8 = "text/gemini; charset=utf8",
     meta: ?[]const u8 = null,
 
     pub fn formatMeta(self: *const Response, writer: anytype) !void {
-        const meta = if (self.meta) |m| m else self.mime;
+        const meta = if (self.meta) |m|
+            m
+        else switch (self.status) {
+            .SUCCESS => self.mime,
+            else => |t| t.toString(),
+        };
         try writer.print("{d:0>2} {s}\r\n", .{ @intFromEnum(self.status), meta });
     }
 };
@@ -145,8 +180,6 @@ pub const Server = struct {
         var conn = try self.server.accept();
         errdefer conn.stream.close();
 
-        std.debug.print("Accepted connection\n", .{});
-
         var ssl = zzl.Ssl.init(self.context, conn.stream);
         errdefer ssl.deinit();
 
@@ -155,7 +188,6 @@ pub const Server = struct {
 
         // pass pointers on the stack
         var req = try Request.init(&mem, &conn, &ssl);
-        std.debug.print("Processed request\n", .{});
         return req;
     }
 };
