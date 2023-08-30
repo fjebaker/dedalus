@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
 
     const zigwolfssl = b.dependency(
         "zigwolfssl",
-        .{ .optimize = optimize, .target = target, .@"wolfssl-debug" = true },
+        .{ .optimize = optimize, .target = target, .@"wolfssl-debug" = false },
     );
     b.installArtifact(zigwolfssl.artifact("wolfssl"));
 
