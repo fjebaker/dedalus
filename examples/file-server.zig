@@ -1,7 +1,8 @@
 const std = @import("std");
 const dedalus = @import("dedalus");
 
-const address = std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, 8044);
+// const address = std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, 8033);
+const address = std.net.Address.initIp4([4]u8{ 0, 0, 0, 0 }, 1965);
 
 fn startServer() !void {
     var alloc = std.heap.c_allocator;
