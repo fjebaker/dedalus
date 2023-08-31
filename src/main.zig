@@ -30,6 +30,20 @@ pub const Request = struct {
     content: []const u8,
     uri: std.Uri,
 
+    fn readUntilCRLF(ssl: *zzl.Ssl, buf: []u8) ![]u8 {
+        var eof: ?usize = null;
+        var bytes: usize = 0;
+        while (bytes < buf.len and eof == null) {
+            var slice = buf[bytes..];
+            const size = try ssl.read(slice);
+            bytes += size;
+            // check for CRLF
+            eof = std.mem.indexOf(u8, slice[0..size], "\r\n");
+        }
+        // read 2 additional bytes for the CRLF
+        return buf[0 .. bytes + eof.? + 2];
+    }
+
     pub fn init(
         mem: *std.heap.ArenaAllocator,
         conn: *std.net.StreamServer.Connection,
@@ -37,10 +51,11 @@ pub const Request = struct {
     ) !Request {
         var alloc = mem.allocator();
 
-        var buff: [4096]u8 = undefined;
-        const size = try ssl.read(&buff);
+        var buf: [4096]u8 = undefined;
 
-        var raw_content = try alloc.dupe(u8, buff[0..size]);
+        var string = try readUntilCRLF(ssl, &buf);
+
+        var raw_content = try alloc.dupe(u8, string);
         const content = utils.trimWhitespaces(raw_content);
 
         // parse URI
@@ -94,19 +109,26 @@ pub const Request = struct {
 
     fn writeResponse(writer: anytype, response: Response) !void {
         try response.formatMeta(writer);
-        try writer.writeAll(response.content);
+        if (response.content.len > 0)
+            try writer.writeAll(response.content);
     }
 
     pub fn respond(self: *Request, response: Response) !void {
         try writeResponse(self.ssl.writer(), response);
         self.logResponse(response);
+        self.ssl.closeNotify() catch |err| {
+            switch (err) {
+                zzl.Ssl.SslErrors.CloseNotifyFailed => {},
+                else => log.info("close_notify failed: {!}", .{err}),
+            }
+        };
     }
 };
 
 pub const Response = struct {
     status: gemini.StatusCodes = .SUCCESS,
     content: []const u8 = "",
-    mime: []const u8 = "text/gemini; charset=utf8",
+    mime: []const u8 = "text/gemini; charset=utf-8",
     meta: ?[]const u8 = null,
 
     pub fn formatMeta(self: *const Response, writer: anytype) !void {

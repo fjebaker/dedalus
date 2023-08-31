@@ -1,8 +1,25 @@
 const std = @import("std");
 
+const WHITESPACE = [_]u8{ ' ', '\n', '\r', '\t', 10, 13 };
+
 pub fn trimWhitespaces(s: []const u8) []const u8 {
-    const out = std.mem.trim(u8, s, &[_]u8{ ' ', '\n', '\r', '\t' });
-    return out;
+    const start: usize = blk: {
+        for (s, 0..) |c, i| {
+            if (std.mem.indexOfScalar(u8, &WHITESPACE, c) == null)
+                break :blk i;
+        }
+        // only whitespace
+        return "";
+    };
+    const end: usize = blk: {
+        for (s[start..], start..) |c, i| {
+            if (std.mem.indexOfScalar(u8, &WHITESPACE, c) != null) {
+                break :blk i;
+            }
+        }
+        break :blk s.len;
+    };
+    return s[start..end];
 }
 
 pub fn cleanPath(s: []const u8) []const u8 {
@@ -37,4 +54,10 @@ test "clean-paths" {
     try std.testing.expectEqualStrings("/", cleanPath("/"));
     try std.testing.expectEqualStrings("/", cleanPath(""));
     try std.testing.expectEqualStrings("/hello//world", cleanPath("///hello//world"));
+}
+
+test "whitespace-cleaning" {
+    try std.testing.expectEqualStrings("hello", trimWhitespaces("hello    "));
+    try std.testing.expectEqualStrings("hello", trimWhitespaces("hello \n \r   \t   "));
+    try std.testing.expectEqualStrings("hello", trimWhitespaces("hello\r\r\n"));
 }
