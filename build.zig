@@ -46,6 +46,21 @@ pub fn build(b: *std.Build) void {
     const file_server_step = b.step("server", "Run file server example");
     file_server_step.dependOn(&run_file_server.step);
     file_server_step.dependOn(&install_file_server.step);
+
+    const client = buildExample(b, mod, zigwolfssl, .{
+        .name = "client",
+        .root_source_file = .{ .path = "examples/client.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    const run_client = b.addRunArtifact(client);
+    if (b.args) |args| {
+        run_client.addArgs(args);
+    }
+    const install_client = b.addInstallArtifact(client, .{});
+    const client_step = b.step("client", "Run client example");
+    client_step.dependOn(&run_client.step);
+    client_step.dependOn(&install_client.step);
 }
 
 pub fn buildExample(
