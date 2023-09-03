@@ -20,6 +20,20 @@ pub fn deinit() void {
     zzl.deinit();
 }
 
+fn readUntilCRLF(ssl: *zzl.Ssl, buf: []u8) ![]u8 {
+    var eof: ?usize = null;
+    var bytes: usize = 0;
+    while (bytes < buf.len and eof == null) {
+        var slice = buf[bytes..];
+        const size = try ssl.read(slice);
+        bytes += size;
+        // check for CRLF
+        eof = std.mem.indexOf(u8, slice[0..size], "\r\n");
+    }
+    // read 2 additional bytes for the CRLF
+    return buf[0 .. bytes + eof.? + 2];
+}
+
 pub const Request = struct {
     pub const RequestError = error{MalformedUri};
 
@@ -29,20 +43,6 @@ pub const Request = struct {
 
     content: []const u8,
     uri: std.Uri,
-
-    fn readUntilCRLF(ssl: *zzl.Ssl, buf: []u8) ![]u8 {
-        var eof: ?usize = null;
-        var bytes: usize = 0;
-        while (bytes < buf.len and eof == null) {
-            var slice = buf[bytes..];
-            const size = try ssl.read(slice);
-            bytes += size;
-            // check for CRLF
-            eof = std.mem.indexOf(u8, slice[0..size], "\r\n");
-        }
-        // read 2 additional bytes for the CRLF
-        return buf[0 .. bytes + eof.? + 2];
-    }
 
     pub fn init(
         mem: *std.heap.ArenaAllocator,
@@ -140,6 +140,10 @@ pub const Response = struct {
         };
         try writer.print("{d:0>2} {s}\r\n", .{ @intFromEnum(self.status), meta });
     }
+
+    pub fn parse(content: []const u8) !Response {
+        return .{ .content = content };
+    }
 };
 
 pub const Server = struct {
@@ -150,7 +154,6 @@ pub const Server = struct {
     address: std.net.Address,
 
     listening: bool = false,
-
     pub const Options = struct {
         address: std.net.Address =
             std.net.Address.initIp4([4]u8{ 127, 0, 0, 1 }, 1961),
@@ -208,6 +211,71 @@ pub const Server = struct {
         // pass pointers on the stack
         var req = try Request.init(&mem, &conn, &ssl);
         return req;
+    }
+};
+
+pub const Client = struct {
+    mem: std.heap.ArenaAllocator,
+    context: zzl.Context,
+    uri: std.Uri,
+
+    pub fn init(allocator: std.mem.Allocator, uri: std.Uri) !Client {
+        var context = try zzl.Context.init(.TLSv1_3_Client);
+        errdefer context.deinit();
+
+        context.setVerify(.NoVerify);
+
+        return .{
+            .mem = std.heap.ArenaAllocator.init(allocator),
+            .context = context,
+            .uri = uri,
+        };
+    }
+
+    pub fn deinit(self: *Client) void {
+        self.mem.deinit();
+        self.* = undefined;
+    }
+
+    pub fn fetch(self: *Client) !Response {
+        var alloc = self.mem.allocator();
+        var stream = try std.net.tcpConnectToHost(
+            alloc,
+            self.uri.host.?,
+            self.uri.port.?,
+        );
+        defer stream.close();
+
+        var ssl = zzl.Ssl.init(self.context, stream);
+        defer ssl.deinit();
+
+        try self.makeRequest(alloc, &ssl);
+        return self.getResponse(alloc, &ssl);
+    }
+
+    fn makeRequest(
+        self: *const Client,
+        alloc: std.mem.Allocator,
+        ssl: *zzl.Ssl,
+    ) !void {
+        var list = std.ArrayList(u8).init(alloc);
+        defer list.deinit();
+        try std.fmt.format(
+            list.writer(),
+            "gemini://{s}:{d}/{s}\r\n",
+            .{ self.uri.host.?, self.uri.port.?, self.uri.path },
+        );
+        std.debug.print("Writing: '{s}'\n", .{list.items});
+        _ = try ssl.write(list.items);
+    }
+
+    fn getResponse(
+        _: *const Client,
+        alloc: std.mem.Allocator,
+        ssl: *zzl.Ssl,
+    ) !Response {
+        var content = try ssl.reader().readAllAlloc(alloc, 10000);
+        return Response.parse(content);
     }
 };
 
